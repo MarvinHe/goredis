@@ -9,6 +9,7 @@ import (
 	"strings"
 	"os"
 	// "encoding/binary"
+	"github.com/labstack/gommon/log"
 )
 
 
@@ -36,6 +37,8 @@ const (
 	REDIS_RDB_OPCODE_EOF = 255
 
 )
+
+var logger = log.New("logger")
 
 type RedisServer struct {
 
@@ -83,17 +86,17 @@ func (cli *client) serve() {
 	for {
 		cmd, err := bur.ReadString(byte('\n'))
 		if err != nil {
-			fmt.Println("buffer read error %v", err)
+			logger.Errorf("buffer read error %v", err)
 			break
 		}
 		// cmd parser, and validate params
 		parts := strings.Split(strings.TrimSpace(cmd), " ")
-		fmt.Printf("%s: the cmd get is: %v\n", cli.id, parts)
+		logger.Debug("%s: the cmd get is: %v\n", cli.id, parts)
 		switch parts[0] {
 		case "get":
 			v, ok := cli.db.tmpDict[parts[1]]
 			if !ok {
-				fmt.Printf("string key %s not exist\n", parts[1])
+				logger.Errorf("string key %s not exist\n", parts[1])
 			}
 			cli.conn.Write([]byte(v))
 			cli.conn.Write([]byte("\n\r"))
@@ -101,11 +104,11 @@ func (cli *client) serve() {
 			cli.db.tmpDict[parts[1]] = parts[2]
 			cli.conn.Write([]byte("ok\n\r"))
 		case "exit":
-			fmt.Printf("exit cmd from client\n")
+			logger.Debug("exit cmd from client\n")
 			cli.conn.Write([]byte("closed\n\r"))
 			break
 		case "keys":
-			fmt.Printf("show keys %v\n", cli.db.tmpDict)
+			logger.Debugf("show keys %v\n", cli.db.tmpDict)
 			cli.conn.Write([]byte("show keys\n\r"))
 		}
 	}
@@ -167,7 +170,7 @@ func (srv *redisServer) dump() {
 	r := rdbWriter{fo}
 	defer fo.Close()
 	if err != nil {
-		fmt.Println(err)
+		logger.Error(err)
 		return
 	}
 	r.WriteString(fmt.Sprintf("REDIS%04d", REDIS_RDB_VERSION))
@@ -185,6 +188,79 @@ func (srv *redisServer) dump() {
 	r.WriteFlag(REDIS_RDB_OPCODE_EOF)
 }
 
+type rdbReader struct {
+	f *os.File
+	rbuf []byte
+}
+
+func (r *rdbReader) ReadLen() int {
+	r.f.Read(r.rbuf[:1])
+	switch r.rbuf[0] >> 6 {
+	case 0:
+		return int(r.rbuf[0] & 0x3f)
+	case 1:
+		r.f.Read(r.rbuf[1:2])
+		return int((r.rbuf[0] & 0x3f) << 8) +  int(r.rbuf[1])
+	}
+	return 0
+}
+
+func (r *rdbReader) Read(n int) []byte {
+	r.f.Read(r.rbuf[:n])
+	return r.rbuf[:n]
+}
+
+func (r *rdbReader) ReadString(n int) string {
+	r.f.Read(r.rbuf[:n])
+	return string(r.rbuf[:n])
+}
+
+func (r *rdbReader) ReadFlag() byte {
+	return r.Read(1)[0]
+}
+
+func (srv *redisServer) loadRdb() {
+	fo, err := os.Open("go_redis.rdb")
+	if err != nil {
+		logger.Error(err)
+		return
+	}
+	defer fo.Close()
+	var flag byte
+	var l int
+	var key, value string
+
+	r := rdbReader{f: fo, rbuf: make([]byte, 128)}
+	tmp := r.Read(9)
+	logger.Debug(string(tmp))
+	flag = r.ReadFlag()
+	logger.Debugf("flag %d", flag)
+	logger.Debug(flag)
+	r.ReadLen()
+
+	cnt := 0
+	for {
+		flag = r.ReadFlag()
+		logger.Debugf("flag %d", flag)
+		if flag == REDIS_RDB_OPCODE_EOF {
+			break
+		}
+		l = r.ReadLen()
+		key = r.ReadString(l)
+		logger.Debugf("len: %d key %s", l, key)
+		switch flag {
+		case RDB_TYPE_STRING:
+			l = r.ReadLen()
+			value = r.ReadString(l)
+			logger.Debugf("string value %d, %s", l, value)
+			srv.db.tmpDict[key] = value
+		}
+		cnt += 1
+		if cnt > 10 {
+			break
+		}
+	}
+}
 
 func (srv *redisServer) newConn(conn net.Conn) (cli client) {
 	cli = client{
@@ -200,13 +276,13 @@ func (srv *redisServer) run() error {
 	hostPort := ":8989"
 	l, err := net.Listen("tcp", hostPort)
 	if err != nil {
-		fmt.Println("listen socket error %s %v", hostPort, err)
+		logger.Errorf("listen socket error %s %v", hostPort, err)
 		return err
 	}
 	go func () {
 		for {
 			time.Sleep(10 * time.Second)
-			fmt.Println("save dump")
+			logger.Debug("save dump")
 			srv.dump()
 		}
 	}()
@@ -223,7 +299,7 @@ func (srv *redisServer) run() error {
 				if max := 1 * time.Second; tempDelay > max {
 					tempDelay = max
 				}
-				fmt.Println("http: Accept error: %v; retrying in %v", e, tempDelay)
+				logger.Errorf("http: Accept error: %v; retrying in %v", e, tempDelay)
 				time.Sleep(tempDelay)
 				continue
 			}
@@ -239,12 +315,16 @@ func (srv *redisServer) run() error {
 
 
 func Start() {
+	logger.SetLevel(log.DEBUG)
 	var t redisDb = redisDb{tmpDict: map[string]string{}}
 	srv := redisServer{
 		db: &t,
 	}
+	logger.Debug("load db start")
+	srv.loadRdb()
+	logger.Debug("load db ok")
 	err := srv.run()
 	if err != nil {
-		fmt.Println("start err %v", err)
+		logger.Errorf("start err %v", err)
 	}
 }
