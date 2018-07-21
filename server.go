@@ -58,17 +58,14 @@ func (cli *client) serve() {
 	var v string
 	var ts, now int64
 	for {
-		cmd, err := bur.ReadBytes(byte('\n'))
 		now = time.Now().UnixNano()
+		parts, err := ReadCommand(bur)
 		if err != nil {
-			logger.Errorf("buffer read error %v", err)
-			break
+			logger.Errorf("bad command error %v", err)
+			cli.conn.Close()
+			return
 		}
-		// cmd parser, and validate params
-		// parts := strings.Split(strings.TrimSpace(cmd), " ")
-		// use new protocol parser
-		parts := ParseLine(cmd)
-		logger.Debug("%s: the cmd get is: %v\n", cli.id, parts)
+		logger.Debugf("%s: the cmd get is: %v", cli.id, parts)
 		switch parts[0] {
 		case "get":
 			v, ok = cli.db.tmpDict[parts[1]]
@@ -134,6 +131,10 @@ func (cli *client) serve() {
 		case "keys":
 			logger.Debugf("show keys %v\n", cli.db.tmpDict)
 			cli.conn.Write([]byte("show keys\n\r"))
+		case "ping", "PING":
+			cli.conn.Write([]byte(REPLAY_PONG))
+		default:
+			cli.conn.Write([]byte(REPLAY_WRONG_COMMAND))
 		}
 	}
 }
@@ -293,6 +294,7 @@ func (srv *redisServer) run() error {
 		}
 		tempDelay = 0
 		c := srv.newConn(rw)
+		logger.Infof("new connection: %s created", c.id)
 		go c.serve()
 
 	}

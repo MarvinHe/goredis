@@ -43,6 +43,7 @@ const (
 	REPLAY_EMPTY_MULTI_BULK = "*0\r\n"
 	REPLAY_PONG = "+PONG\r\n"
 	REPLAY_WRONG_NUMBER = "-ERR value is not an integer or out of range\r\n"
+	REPLAY_WRONG_COMMAND = "-ERR no such command\r\n"
 )
 
 var logger = log.New("logger")

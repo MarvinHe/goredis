@@ -3,6 +3,9 @@ package go_redis
 import (
 	"fmt"
 	// "strconv"
+	"bufio"
+	"bytes"
+	"strconv"
 )
 
 var HEX2DIGIT map[byte]byte = map[byte]byte {
@@ -95,6 +98,39 @@ func ParseLine(line []byte) []string {
 		buf = buf[:0]
 	}
 	return ret
+}
+
+func ReadCommand(r *bufio.Reader) (parts []string, err error) {
+	var index, l int
+	cmd, err := r.ReadBytes(byte('\n'))
+	if err != nil {
+		logger.Errorf("buffer read error %v", err)
+		return
+	}
+	if cmd[0] == '*' {
+		index = bytes.IndexByte(cmd, '\r')
+		l, err = strconv.Atoi(string(cmd[1:index]))
+		parts = make([]string, l)
+		for i := 0; i < l; i += 1 {
+			cmd, err = r.ReadBytes(byte('\n'))
+			if err != nil {
+				logger.Errorf("buffer read error %v", err)
+				return
+			}
+			if cmd[0] == ':' {
+				parts[i] = string(cmd[1:bytes.IndexByte(cmd, '\r')])
+			} else if cmd[0] == '$' {
+				cmd, err = r.ReadBytes(byte('\n'))
+				parts[i] = string(cmd[:bytes.IndexByte(cmd, '\r')])
+			} else if cmd[0] == '*' {
+				// TODO: handle multi bulk data later
+				panic("bulk data not supported now")
+			}
+		}
+	} else {
+		parts = ParseLine(cmd)
+	}
+	return
 }
 
 func EncodeReply(data interface{}) string {
