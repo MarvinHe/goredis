@@ -133,14 +133,31 @@ func ReadCommand(r *bufio.Reader) (parts []string, err error) {
 	return
 }
 
+func encodeString(data []byte) []byte {
+	return []byte(fmt.Sprintf("$%d%s%s%s", len(data), LINE_DELIMITER, string(data), LINE_DELIMITER))
+}
+
+func encodeBulk(l int) []byte {
+	return []byte(fmt.Sprintf("*%d%s", l, LINE_DELIMITER))
+}
+
 func EncodeReply(data interface{}) string {
-	// var sb []byte = []byte{}
+	var sb []byte = []byte{}
+	var hash map[string]string
 	switch data.(type) {
 	case string:
 		// TODO: test Atoi and Sprintf, which is faster when converting %d
-		return fmt.Sprintf("$%d%s%s%s", len(data.(string)), LINE_DELIMITER, data.(string), LINE_DELIMITER)
+		return string(encodeString([]byte(data.(string))))
 	case int64:
 		return fmt.Sprintf(":%d%s", data.(int64), LINE_DELIMITER)
+	case map[string]string:
+		hash = data.(map[string]string)
+		sb = append(sb, encodeBulk(len(hash) * 2)...)
+		for k, v := range hash {
+			sb = append(sb, encodeString([]byte(k))...)
+			sb = append(sb, encodeString([]byte(v))...)
+		}
+		return string(sb)
 	}
 	return REPLAY_NULL_BULK
 }

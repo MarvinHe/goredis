@@ -151,6 +151,20 @@ func (cli *client) serve() {
 			} else {
 				cli.conn.Write([]byte(REPLAY_NULL_BULK))
 			}
+		case "hgetall":
+			hash, ok = cli.db.hashDict[parts[1]]
+			if !ok {
+				cli.conn.Write([]byte(REPLAY_EMPTY_MULTI_BULK))
+				continue
+			}
+			ts, ok = cli.db.expires[parts[1]]
+			if ok && ts < now {  // expired key
+				delete(cli.db.hashDict, parts[1])
+				delete(cli.db.expires, parts[1])
+				cli.conn.Write([]byte(REPLAY_EMPTY_MULTI_BULK))
+				continue
+			}
+			cli.conn.Write([]byte(EncodeReply(hash)))
 		default:
 			cli.conn.Write([]byte(REPLAY_WRONG_COMMAND))
 		}
