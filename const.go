@@ -32,7 +32,7 @@ const (
 const (
 	ERR = "-ERR"
 	LINE_DELIMITER = "\r\n"
-	REPLAY_OK = "+ok\r\n"
+	REPLAY_OK = "+OK\r\n"
 	REPLAY_ERR = "-ERR\r\n"
 	REPLAY_ZERO = ":0\r\n"
 	REPLAY_ONE = ":1\r\n"

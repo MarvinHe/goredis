@@ -3,11 +3,9 @@ package go_redis
 import (
 	"net"
 	"time"
-	"fmt"
 	"github.com/pborman/uuid"
 	"bufio"
 	// "strings"
-	"os"
 	"strconv"
 	"github.com/labstack/gommon/log"
 )
@@ -20,6 +18,7 @@ type Set map[string]bool
 
 type redisDb struct {
 	tmpDict map[string]string // just for first implementation
+	hashDict map[string]map[string]string
 	dict Set
 	expires map[string]int64 // expires in millisecond
 	blocking_keys Set
@@ -57,6 +56,7 @@ func (cli *client) serve() {
 	var ok bool
 	var v string
 	var ts, now int64
+	var hash map[string]string
 	for {
 		now = time.Now().UnixNano()
 		parts, err := ReadCommand(bur)
@@ -133,6 +133,24 @@ func (cli *client) serve() {
 			cli.conn.Write([]byte("show keys\n\r"))
 		case "ping", "PING":
 			cli.conn.Write([]byte(REPLAY_PONG))
+		case "hset":
+			hash, ok = cli.db.hashDict[parts[1]]
+			if !ok {
+				hash = map[string]string{}
+				cli.db.hashDict[parts[1]] = hash
+			}
+			hash[parts[2]] = parts[3]
+			cli.conn.Write([]byte(REPLAY_ONE))
+		case "hget":
+			hash, ok = cli.db.hashDict[parts[1]]
+			if ok {
+				v, ok = hash[parts[2]]
+			}
+			if ok {
+				cli.conn.Write([]byte(EncodeReply(v)))
+			} else {
+				cli.conn.Write([]byte(REPLAY_NULL_BULK))
+			}
 		default:
 			cli.conn.Write([]byte(REPLAY_WRONG_COMMAND))
 		}
@@ -159,94 +177,6 @@ type redisServer struct {
 	client_paused bool
 
 	next_client_id uint64
-}
-
-func (srv *redisServer) dump() {
-	now := time.Now().UnixNano()
-	fo, err := os.Create("go_redis.rdb")
-	r := rdbWriter{fo}
-	defer fo.Close()
-	if err != nil {
-		logger.Error(err)
-		return
-	}
-	r.WriteString(fmt.Sprintf("REDIS%04d", REDIS_RDB_VERSION))
-	r.WriteFlag(REDIS_RDB_OPCODE_SELECTDB)
-	r.WriteLen(0)
-	// rdbSaveKeyValuePair
-	for k, v := range srv.db.tmpDict {
-		expire, ok := srv.db.expires[k]
-		if ok {
-			if expire < now {   // expired key, delete
-				delete(srv.db.expires, k)
-				delete(srv.db.tmpDict, k)
-				continue
-			}
-			r.WriteFlag(REDIS_RDB_OPCODE_EXPIRETIME_MS)
-			r.WriteInt(expire / 1e6)
-		}
-		r.WriteFlag(RDB_TYPE_STRING)
-		r.WRDBString(k)
-		r.WRDBString(v)
-	}
-	// EOF
-	r.WriteFlag(REDIS_RDB_OPCODE_EOF)
-}
-
-func (srv *redisServer) loadRdb() {
-	fo, err := os.Open("go_redis.rdb")
-	if err != nil {
-		logger.Error(err)
-		return
-	}
-	defer fo.Close()
-	var flag byte
-	var l int
-	var key, value string
-	var ts int64
-	now := time.Now().UnixNano()
-
-	r := rdbReader{f: fo, rbuf: make([]byte, 128)}
-	tmp := r.Read(9)
-	logger.Debug(string(tmp))
-	flag = r.ReadFlag()
-	logger.Debugf("flag %d", flag)
-	logger.Debug(flag)
-	r.ReadLen()
-
-	cnt := 0
-	for {
-		ts = 0
-		flag = r.ReadFlag()
-		logger.Debugf("flag %d", flag)
-		if flag == REDIS_RDB_OPCODE_EOF {
-			break
-		}
-		if flag == REDIS_RDB_OPCODE_EXPIRETIME_MS {
-			ts = r.ReadInt64() * 1e6
-			flag = r.ReadFlag()
-		}
-		l = r.ReadLen()
-		key = r.ReadString(l)
-		fmt.Println("ts %s is: %d", key, ts)
-		switch flag {
-		case RDB_TYPE_STRING:
-			l = r.ReadLen()
-			value = r.ReadString(l)
-			logger.Debugf("string value %d, %s", l, value)
-		}
-		if ts == 0 || ts > now {
-			srv.db.tmpDict[key] = value
-			if ts > now {
-				srv.db.expires[key] = ts
-			}
-		}
-		// just for debug
-		cnt += 1
-		if cnt > 100 {
-			break
-		}
-	}
 }
 
 func (srv *redisServer) newConn(conn net.Conn) (cli client) {
@@ -303,7 +233,11 @@ func (srv *redisServer) run() error {
 
 func Start() {
 	logger.SetLevel(log.DEBUG)
-	var t redisDb = redisDb{tmpDict: map[string]string{}, expires: map[string]int64{}}
+	var t redisDb = redisDb{
+		tmpDict: map[string]string{},
+		expires: map[string]int64{},
+		hashDict: map[string]map[string]string{},
+	}
 	srv := redisServer{
 		db: &t,
 	}

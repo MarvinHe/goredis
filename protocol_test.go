@@ -3,6 +3,7 @@ package go_redis_test
 import (
 	"testing"
 	"go_redis"
+	"fmt"
 )
 
 func TestParser(t *testing.T) {
@@ -16,10 +17,17 @@ func TestParser(t *testing.T) {
 	}
 }
 
-func TestEncodeReplay(t * testing.T) {
+func TestEncodeReplay(t *testing.T) {
 	var line string = "ooa"
 	reply := go_redis.EncodeReply(line)
 	if reply != "$3\r\nooa\r\n" {
 		t.Errorf("encode reply error %s %s", line, reply)
 	}
+}
+
+func TestMapOFMap(t *testing.T) {
+	hashDict := map[string]map[string]string{}
+	hashDict["a"] = map[string]string{"key": "value"}
+	fmt.Println(hashDict)
+	t.Error(hashDict)
 }
