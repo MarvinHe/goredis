@@ -169,7 +169,7 @@ func (srv *redisServer) loadRdb() {
 			}
 		}
 		key = r.ReadEncodeString()
-		fmt.Println("ts %s is: %d", key, ts)
+		fmt.Printf("ts %s is: %d %s", key, ts, valid)
 		switch flag {
 		case RDB_TYPE_STRING:
 			value = r.ReadEncodeString()
@@ -187,7 +187,7 @@ func (srv *redisServer) loadRdb() {
 				srv.db.hashDict[key] = hash
 			}
 		}
-		if valid {
+		if ts > now {
 			srv.db.expires[key] = ts
 		}
 		// just for debug

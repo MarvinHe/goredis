@@ -5,11 +5,12 @@ import (
 	"time"
 	"github.com/pborman/uuid"
 	"bufio"
-	// "strings"
 	"strconv"
 	"github.com/labstack/gommon/log"
+	"strings"
 )
 
+type Hash map[string]string
 type RedisServer struct {
 
 }
@@ -18,7 +19,7 @@ type Set map[string]bool
 
 type redisDb struct {
 	tmpDict map[string]string // just for first implementation
-	hashDict map[string]map[string]string
+	hashDict map[string]Hash
 	dict Set
 	expires map[string]int64 // expires in millisecond
 	blocking_keys Set
@@ -48,6 +49,28 @@ type client struct {
 	reply_bytes uint64
 }
 
+func (db *redisDb) ValidKey(key string) bool {
+	var ok = true
+	var ts int64
+	now := time.Now().UnixNano()
+	_, ok = db.tmpDict[key]
+	if !ok {
+		_, ok = db.hashDict[key]
+	}
+	if ok {
+		ts, ok = db.expires[key]
+		if ok && ts < now {  // expired key
+			delete(db.tmpDict, key)
+			delete(db.hashDict, key)
+			delete(db.expires, key)
+			ok = false
+		} else {
+			ok = true
+		}
+	}
+	return ok
+}
+
 func (cli *client) serve() {
 	bur := bufio.NewReader(cli.conn)
 	defer func () {
@@ -56,7 +79,8 @@ func (cli *client) serve() {
 	var ok bool
 	var v string
 	var ts, now int64
-	var hash map[string]string
+	var hash Hash
+	var command Command
 	for {
 		now = time.Now().UnixNano()
 		parts, err := ReadCommand(bur)
@@ -65,30 +89,19 @@ func (cli *client) serve() {
 			cli.conn.Close()
 			return
 		}
+		command, ok = name2command[strings.ToUpper(parts[0])]
+		if ok {
+			err = command.Valid(parts[1:])
+			if err != nil {
+				cli.conn.Write([]byte(ErrorReply(err.Error())))
+			} else {
+				command.Execute(cli)
+			}
+			continue
+		}
 		logger.Debugf("%s: the cmd get is: %v", cli.id, parts)
 		switch parts[0] {
-		case "get":
-			v, ok = cli.db.tmpDict[parts[1]]
-			if !ok {
-				cli.conn.Write([]byte(REPLAY_NULL_BULK))
-				continue
-			}
-			ts, ok = cli.db.expires[parts[1]]
-			if ok && ts < now {  // expired key
-				delete(cli.db.tmpDict, parts[1])
-				delete(cli.db.expires, parts[1])
-				cli.conn.Write([]byte(REPLAY_NULL_BULK))
-				continue
-			}
-			cli.conn.Write([]byte(EncodeReply(v)))
-		case "set":
-			cli.db.tmpDict[parts[1]] = parts[2]
-			cli.conn.Write([]byte(REPLAY_OK))
-		case "exit":
-			logger.Debug("exit cmd from client\n")
-			cli.conn.Write([]byte("closed\n\r"))
-			break
-		case "expire":
+		case "EXPIRE":
 			if _, ok = cli.db.tmpDict[parts[1]]; !ok {  // no such key
 				cli.conn.Write([]byte(REPLAY_ZERO))
 				continue
@@ -102,7 +115,7 @@ func (cli *client) serve() {
 			}
 			cli.db.expires[parts[1]] = now + ttl * 1e9
 			cli.conn.Write([]byte(REPLAY_ONE))
-		case "pexpire":
+		case "PEXPIRE":
 			if _, ok = cli.db.tmpDict[parts[1]]; !ok {  // no such key
 				cli.conn.Write([]byte(REPLAY_ZERO))
 				continue
@@ -115,7 +128,7 @@ func (cli *client) serve() {
 			}
 			cli.db.expires[parts[1]] = now + ttl * 1e6
 			cli.conn.Write([]byte(REPLAY_ONE))
-		case "ttl":
+		case "TTL":
 			if _, ok = cli.db.tmpDict[parts[1]]; !ok {  // no such key
 				cli.conn.Write([]byte(REPLAY_M2))
 			} else {
@@ -128,12 +141,9 @@ func (cli *client) serve() {
 					cli.conn.Write([]byte(REPLAY_M1))
 				}
 			}
-		case "keys":
-			logger.Debugf("show keys %v\n", cli.db.tmpDict)
-			cli.conn.Write([]byte("show keys\n\r"))
 		case "ping", "PING":
 			cli.conn.Write([]byte(REPLAY_PONG))
-		case "hset":
+		case "hset", "HSET":
 			hash, ok = cli.db.hashDict[parts[1]]
 			if !ok {
 				hash = map[string]string{}
@@ -141,7 +151,7 @@ func (cli *client) serve() {
 			}
 			hash[parts[2]] = parts[3]
 			cli.conn.Write([]byte(REPLAY_ONE))
-		case "hget":
+		case "hget", "HGET":
 			hash, ok = cli.db.hashDict[parts[1]]
 			if ok {
 				v, ok = hash[parts[2]]
@@ -151,7 +161,7 @@ func (cli *client) serve() {
 			} else {
 				cli.conn.Write([]byte(REPLAY_NULL_BULK))
 			}
-		case "hgetall":
+		case "hgetall", "HGETALL":
 			hash, ok = cli.db.hashDict[parts[1]]
 			if !ok {
 				cli.conn.Write([]byte(REPLAY_EMPTY_MULTI_BULK))
@@ -250,7 +260,7 @@ func Start() {
 	var t redisDb = redisDb{
 		tmpDict: map[string]string{},
 		expires: map[string]int64{},
-		hashDict: map[string]map[string]string{},
+		hashDict: map[string]Hash{},
 	}
 	srv := redisServer{
 		db: &t,

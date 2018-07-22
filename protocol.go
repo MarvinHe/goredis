@@ -93,9 +93,10 @@ func ParseLine(line []byte) []string {
 			}
 			i += 1
 		}
-
-		ret = append(ret, string(buf))
-		buf = buf[:0]
+		if len(buf) != 0 {
+			ret = append(ret, string(buf))
+			buf = buf[:0]
+		}
 	}
 	return ret
 }
@@ -150,8 +151,8 @@ func EncodeReply(data interface{}) string {
 		return string(encodeString([]byte(data.(string))))
 	case int64:
 		return fmt.Sprintf(":%d%s", data.(int64), LINE_DELIMITER)
-	case map[string]string:
-		hash = data.(map[string]string)
+	case Hash:
+		hash = data.(Hash)
 		sb = append(sb, encodeBulk(len(hash) * 2)...)
 		for k, v := range hash {
 			sb = append(sb, encodeString([]byte(k))...)

@@ -1,6 +1,9 @@
 package go_redis
 
-import "github.com/labstack/gommon/log"
+import (
+	"github.com/labstack/gommon/log"
+	"errors"
+)
 
 const (
 	REDIS_RDB_VERSION = 7
@@ -44,7 +47,9 @@ const (
 	REPLAY_PONG = "+PONG\r\n"
 	REPLAY_WRONG_NUMBER = "-ERR value is not an integer or out of range\r\n"
 	REPLAY_WRONG_COMMAND = "-ERR no such command\r\n"
+
 )
 
+var SYNTAX_ERROR = errors.New("syntax error")
 var logger = log.New("logger")
 
