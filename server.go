@@ -227,6 +227,12 @@ func (srv *redisServer) run() error {
 			srv.dump()
 		}
 	}()
+	go func () {
+		for {
+			time.Sleep(1 * time.Second)
+			srv.activeExpire()
+		}
+	}()
 	tempDelay := 100 * time.Millisecond
 	for {
 		rw, e := l.Accept()
