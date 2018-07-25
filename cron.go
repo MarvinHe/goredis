@@ -12,12 +12,6 @@ func randomKey(db *redisDb) string {
 	return ""
 }
 
-func (db *redisDb) expireKey(key string) bool {
-	delete(db.expires, key)
-	delete(db.tmpDict, key)
-	delete(db.hashDict, key)
-	return true
-}
 /**
  * scan & delete expire keys
  */
@@ -26,19 +20,18 @@ func (srv *redisServer) activeExpire() {
 	var toScan bool = true
 	var i, delCnt int
 	var key string
-	var now int64 = time.Now().Nanosecond()
+	var now int64 = time.Now().UnixNano()
 	endTime := now + SCAN_TIMELIMIT
 	for toScan {
 		delCnt = 0
 		for i = 0; i < SCAN_BATCH; i += 1 {
 			key = randomKey(srv.db)
-			if srv.db.expires[key] < now {
-				srv.db.expireKey(key)
+			if srv.db.expireIfNeeded(key) {
 				delCnt += 1
 			}
 		}
 		toScan = delCnt > SCAN_BATCH / 4
-		now = time.Now().Nanosecond()
+		now = time.Now().UnixNano()
 		if now > endTime { // exceed scan timelimit
 			break
 		}

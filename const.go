@@ -47,9 +47,27 @@ const (
 	REPLAY_PONG = "+PONG\r\n"
 	REPLAY_WRONG_NUMBER = "-ERR value is not an integer or out of range\r\n"
 	REPLAY_WRONG_COMMAND = "-ERR no such command\r\n"
-
+	REPLAY_WRONG_TYPE = "-ERR WRONGTYPE Operation against a key holding the wrong kind of value\r\n"
+	REPLAY_WRONG_PARAMS = "-ERR wrong number of arguments for '%s' command\r\n"
 )
 
+// config const
+const (
+	MAXMEMORY_FLAG_LRU = 1 << 0
+	MAXMEMORY_FLAG_LFU = 1 << 1
+	MAXMEMORY_FLAG_ALLKEYS = 1 << 2
+
+	MAXMEMORY_VOLATILE_LRU = 0 << 8 | MAXMEMORY_FLAG_LRU
+	MAXMEMORY_VOLATILE_LFU = 1 << 8 | MAXMEMORY_FLAG_LFU
+	MAXMEMORY_VOLATILE_TTL = 2 << 8
+	MAXMEMORY_VOLATILE_RANDOM = 3 << 8
+	MAXMEMORY_ALLKEYS_LRU  = 4 << 8 | MAXMEMORY_FLAG_LRU | MAXMEMORY_FLAG_ALLKEYS
+	MAXMEMORY_ALLKEYS_LFU  = 5 << 8 | MAXMEMORY_FLAG_LFU | MAXMEMORY_FLAG_ALLKEYS
+	MAXMEMORY_ALLKEYS_RANDOM = 6 << 8 | MAXMEMORY_FLAG_ALLKEYS
+	MAXMEMORY_NO_EVICTION  = 7 << 8
+
+	CONFIG_DEFAULT_MAXMEMORY_POLICY = MAXMEMORY_NO_EVICTION
+)
 var SYNTAX_ERROR = errors.New("syntax error")
 var logger = log.New("logger")
 

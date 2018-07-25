@@ -81,6 +81,7 @@ func (r *rdbReader) ReadInt64() (i int64) {
 }
 
 func (srv *redisServer) dump() {
+	logger.Debug("save dump")
 	// TODO we need lock when dumping
 	now := time.Now().UnixNano()
 	fo, err := os.Create("go_redis.rdb")

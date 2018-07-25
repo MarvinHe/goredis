@@ -10,25 +10,11 @@ import (
 	"strings"
 )
 
-type Hash map[string]string
 type RedisServer struct {
-
 }
+var stats redisStats
 
 type Set map[string]bool
-
-type redisDb struct {
-	tmpDict map[string]string // just for first implementation
-	hashDict map[string]Hash
-	dict Set
-	expires map[string]int64 // expires in millisecond
-	blocking_keys Set
-	ready_keys Set
-	watched_keys Set
-	// evitction_pool evictionPoolEntry
-	id uint8
-	avg_ttl int64
-}
 
 type redisCommand interface {
 	redisCommandProc(c *client) interface{}
@@ -49,28 +35,6 @@ type client struct {
 	reply_bytes uint64
 }
 
-func (db *redisDb) ValidKey(key string) bool {
-	var ok = true
-	var ts int64
-	now := time.Now().UnixNano()
-	_, ok = db.tmpDict[key]
-	if !ok {
-		_, ok = db.hashDict[key]
-	}
-	if ok {
-		ts, ok = db.expires[key]
-		if ok && ts < now {  // expired key
-			delete(db.tmpDict, key)
-			delete(db.hashDict, key)
-			delete(db.expires, key)
-			ok = false
-		} else {
-			ok = true
-		}
-	}
-	return ok
-}
-
 func (cli *client) serve() {
 	bur := bufio.NewReader(cli.conn)
 	defer func () {
@@ -89,9 +53,10 @@ func (cli *client) serve() {
 			cli.conn.Close()
 			return
 		}
+		stats.totalCommands += 1
 		command, ok = name2command[strings.ToUpper(parts[0])]
 		if ok {
-			err = command.Valid(parts[1:])
+			err = command.Parse(parts[1:])
 			if err != nil {
 				cli.conn.Write([]byte(ErrorReply(err.Error())))
 			} else {
@@ -197,10 +162,10 @@ type redisServer struct {
 	ipfds []int
 	sofd int
 	clients []client
-	current_client *client
 	client_paused bool
 
 	next_client_id uint64
+	config      Config
 }
 
 func (srv *redisServer) newConn(conn net.Conn) (cli client) {
@@ -223,13 +188,13 @@ func (srv *redisServer) run() error {
 	go func () {
 		for {
 			time.Sleep(10 * time.Second)
-			logger.Debug("save dump")
 			srv.dump()
 		}
 	}()
 	go func () {
 		for {
-			time.Sleep(1 * time.Second)
+			// for debug, sleep longer
+			time.Sleep(100 * time.Second)
 			srv.activeExpire()
 		}
 	}()
@@ -254,6 +219,7 @@ func (srv *redisServer) run() error {
 		}
 		tempDelay = 0
 		c := srv.newConn(rw)
+		stats.totalConns += 1
 		logger.Infof("new connection: %s created", c.id)
 		go c.serve()
 
@@ -265,12 +231,15 @@ func Start() {
 	logger.SetLevel(log.DEBUG)
 	var t redisDb = redisDb{
 		tmpDict: map[string]string{},
-		expires: map[string]int64{},
 		hashDict: map[string]Hash{},
+		dict: map[string]robji{},
+		expires: map[string]int64{},
 	}
 	srv := redisServer{
 		db: &t,
+		config: Config{},
 	}
+	stats = redisStats{}
 	logger.Debug("load db start")
 	srv.loadRdb()
 	logger.Debug("load db ok")
