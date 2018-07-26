@@ -120,4 +120,3 @@ func (c *SetCommand) Execute(cli *client) error {
 	}
 	return nil
 }
-

@@ -41,21 +41,24 @@ func (cli *client) serve() {
 		cli.conn.Close()
 	}()
 	var ok bool
-	var v string
-	var ts, now int64
-	var hash Hash
 	var command Command
 	for {
-		now = time.Now().UnixNano()
 		parts, err := ReadCommand(bur)
 		if err != nil {
 			logger.Errorf("bad command error %v", err)
 			cli.conn.Close()
 			return
 		}
+		if len(parts) == 0 {
+			continue
+		}
 		stats.totalCommands += 1
 		command, ok = name2command[strings.ToUpper(parts[0])]
 		if ok {
+			// err = command.GetFlags().Valid(parts[1:])
+			// if err == nil {
+			// }
+			logger.Infof("in the name2command %v", parts)
 			err = command.Parse(parts[1:])
 			if err != nil {
 				cli.conn.Write([]byte(ErrorReply(err.Error())))
@@ -66,80 +69,8 @@ func (cli *client) serve() {
 		}
 		logger.Debugf("%s: the cmd get is: %v", cli.id, parts)
 		switch parts[0] {
-		case "EXPIRE":
-			if _, ok = cli.db.tmpDict[parts[1]]; !ok {  // no such key
-				cli.conn.Write([]byte(REPLAY_ZERO))
-				continue
-			}
-			// store ttl in nanoseconds
-			ttl, err := strconv.ParseInt(parts[2], 10, strconv.IntSize)
-			if err != nil {
-				logger.Errorf("ttl error: %s, %s %v", parts[1], parts[2], err)
-				cli.conn.Write([]byte(REPLAY_WRONG_NUMBER))
-				continue
-			}
-			cli.db.expires[parts[1]] = now + ttl * 1e9
-			cli.conn.Write([]byte(REPLAY_ONE))
-		case "PEXPIRE":
-			if _, ok = cli.db.tmpDict[parts[1]]; !ok {  // no such key
-				cli.conn.Write([]byte(REPLAY_ZERO))
-				continue
-			}
-			ttl, err := strconv.ParseInt(parts[2], 10, strconv.IntSize)
-			if err != nil {
-				logger.Errorf("ttl error: %s, %s %v", parts[1], parts[2], err)
-				cli.conn.Write([]byte(REPLAY_WRONG_NUMBER))
-				continue
-			}
-			cli.db.expires[parts[1]] = now + ttl * 1e6
-			cli.conn.Write([]byte(REPLAY_ONE))
-		case "TTL":
-			if _, ok = cli.db.tmpDict[parts[1]]; !ok {  // no such key
-				cli.conn.Write([]byte(REPLAY_M2))
-			} else {
-				ts, ok = cli.db.expires[parts[1]]
-				ts -= now
-				if ok && ts > 0 {
-					cli.conn.Write([]byte(EncodeReply(ts / 1e9)))
-				} else {
-					logger.Errorf("expire key %s not exist\n", parts[1])
-					cli.conn.Write([]byte(REPLAY_M1))
-				}
-			}
 		case "ping", "PING":
 			cli.conn.Write([]byte(REPLAY_PONG))
-		case "hset", "HSET":
-			hash, ok = cli.db.hashDict[parts[1]]
-			if !ok {
-				hash = map[string]string{}
-				cli.db.hashDict[parts[1]] = hash
-			}
-			hash[parts[2]] = parts[3]
-			cli.conn.Write([]byte(REPLAY_ONE))
-		case "hget", "HGET":
-			hash, ok = cli.db.hashDict[parts[1]]
-			if ok {
-				v, ok = hash[parts[2]]
-			}
-			if ok {
-				cli.conn.Write([]byte(EncodeReply(v)))
-			} else {
-				cli.conn.Write([]byte(REPLAY_NULL_BULK))
-			}
-		case "hgetall", "HGETALL":
-			hash, ok = cli.db.hashDict[parts[1]]
-			if !ok {
-				cli.conn.Write([]byte(REPLAY_EMPTY_MULTI_BULK))
-				continue
-			}
-			ts, ok = cli.db.expires[parts[1]]
-			if ok && ts < now {  // expired key
-				delete(cli.db.hashDict, parts[1])
-				delete(cli.db.expires, parts[1])
-				cli.conn.Write([]byte(REPLAY_EMPTY_MULTI_BULK))
-				continue
-			}
-			cli.conn.Write([]byte(EncodeReply(hash)))
 		default:
 			cli.conn.Write([]byte(REPLAY_WRONG_COMMAND))
 		}

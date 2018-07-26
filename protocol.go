@@ -166,3 +166,11 @@ func EncodeReply(data interface{}) string {
 func ErrorReply(s string) string {
 	return fmt.Sprintf("%s %s%s", ERR, s, LINE_DELIMITER)
 }
+
+func (cli *client) rawReplay(msg string) {
+	cli.conn.Write([]byte(msg))
+}
+
+func (cli *client) ReplayData(data interface{}) {
+	cli.conn.Write([]byte(EncodeReply(data)))
+}

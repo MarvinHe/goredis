@@ -69,5 +69,6 @@ const (
 	CONFIG_DEFAULT_MAXMEMORY_POLICY = MAXMEMORY_NO_EVICTION
 )
 var SYNTAX_ERROR = errors.New("syntax error")
+var NUMBER_ERROR = errors.New("value is not an integer or out of range")
 var logger = log.New("logger")
 

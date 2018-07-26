@@ -78,3 +78,8 @@ func (db *redisDb) SetExpire(key string, obj robji, ts int64) error {
 	db.expires[key] = ts
 	return nil
 }
+
+func (db *redisDb) GetExpire(key string) (ts int64, ok bool) {
+	ts, ok = db.expires[key]
+	return
+}
