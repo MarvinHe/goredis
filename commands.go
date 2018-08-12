@@ -81,6 +81,7 @@ func (c *TTLCommand) Execute(cli *client) error {
 }
 
 var name2command = map[string]Command{
+	// TODO concurrent, we need more data, maybe we can store argv into clients!
 	"GET":  &GetCommand{},
 	"SET":  &SetCommand{},
 	"HGET": &HGetCommand{},

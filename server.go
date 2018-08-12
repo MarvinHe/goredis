@@ -5,7 +5,6 @@ import (
 	"time"
 	"github.com/pborman/uuid"
 	"bufio"
-	"strconv"
 	"github.com/labstack/gommon/log"
 	"strings"
 )
